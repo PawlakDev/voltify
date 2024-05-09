@@ -6,6 +6,7 @@ import time
 
 # Timer execution time
 INTERVAL = 1
+HOURCOUNTER = 23
 
 # So that you can turn off the program when the timer is on
 # Otherwise, an error would appear
@@ -60,7 +61,7 @@ def getData(Login, Password, Ip):
 
 
 # I get the line where the device_id is designated
-def getDeviceById(Id,Conn):
+def getDeviceById(Id, Conn):
     cursor = Conn.cursor()
     cursor.execute("SELECT * FROM devices WHERE id=%s", (Id,))
     return cursor.fetchone()
@@ -75,14 +76,14 @@ def getCountRowsByDeviceId(Id, Conn):
 
 
 # Returns all energy values for a given device id from the table with values from minutes
-def getAllEnergyConsumptionByDeviceId(Id,Conn):
+def getAllEnergyConsumptionByDeviceId(Id, Conn):
     cursor = Conn.cursor()
     cursor.execute("SELECT * FROM energy_consumption WHERE device_id = %s", (Id,))
     return cursor.fetchall()
 
 
 # Energy recording every minute
-def insertEnergyConsumption(Device_id,Current_timestamp,Energy):
+def insertEnergyConsumption(Device_id, Current_timestamp, Energy):
     print("Inserting Energy Consumption for", Device_id)
     cursor = conn.cursor()
     query = "INSERT INTO energy_consumption(device_id, timestamp, consumption) VALUES (%s, %s, %s)"
@@ -101,7 +102,8 @@ def insertHourlyEnergyConsumption(DeviceId, Average, Current_timestamp):
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM energy_consumption_hourly WHERE device_id = %s", (DeviceId,))
     rows = cursor.fetchall()
-    if rows:
+
+    if rows:  # Check if rows is not empty
         rowHour = []
         rowId = []
         for row in rows:
@@ -113,29 +115,30 @@ def insertHourlyEnergyConsumption(DeviceId, Average, Current_timestamp):
         if currentHour in rowHour:
             matching_id = [rowId[i] for i, hour in enumerate(rowHour) if hour == currentHour]
 
-            cursor.execute("SELECT * FROM energy_consumption_hourly WHERE device_id = %s", (matching_id[0],))
-            rows = cursor.fetchone()
-            for row in rows:
-                (id, device_id, start_timestamp, end_timestamp, average_consumption) = row
+            if matching_id:
+                cursor.execute("SELECT * FROM energy_consumption_hourly WHERE id = %s", (matching_id[0],))
+                row = cursor.fetchone()  # Use fetchone since we're expecting only one row
+                if row:  # Check if row is not None
+                    (id, device_id, start_timestamp, end_timestamp, average_consumption) = row
 
-                # Save history
-                query = "INSERT INTO energy_consumption_hourly_history(device_id, start_timestamp, end_timestamp, average_consumption) VALUES (%s, %s, %s, %s)"
-                data = (device_id, start_timestamp, end_timestamp, average_consumption)
-                cursor.execute(query, data)
-                try:
-                    conn.commit()
-                    print("Saved Energy Consumption History for", device_id)
-                except Exception as e:
-                    conn.rollback()  # Rollback the transaction if an error occurs
-                    print(f"Failed to save Energy Consumption for {device_id}. Error: {e}")
+                    # Save history
+                    query = "INSERT INTO energy_consumption_hourly_history(device_id, start_timestamp, end_timestamp, average_consumption) VALUES (%s, %s, %s, %s)"
+                    data = (device_id, start_timestamp, end_timestamp, average_consumption)
+                    cursor.execute(query, data)
+                    try:
+                        conn.commit()
+                        print("Saved Energy Consumption History for", device_id)
+                    except Exception as e:
+                        conn.rollback()  # Rollback the transaction if an error occurs
+                        print(f"Failed to save Energy Consumption for {device_id}. Error: {e}")
 
-                cursor.execute("DELETE FROM energy_consumption_hourly WHERE id = %s", (device_id,))
-                try:
-                    conn.commit()
-                    print("Deleted Energy Consumption for", device_id)
-                except Exception as e:
-                    conn.rollback()  # Rollback the transaction if an error occurs
-                    print(f"Failed to Delete Energy Consumption for {device_id}. Error: {e}")
+                    cursor.execute("DELETE FROM energy_consumption_hourly WHERE id = %s", (device_id,))
+                    try:
+                        conn.commit()
+                        print("Deleted Energy Consumption for", device_id)
+                    except Exception as e:
+                        conn.rollback()  # Rollback the transaction if an error occurs
+                        print(f"Failed to Delete Energy Consumption for {device_id}. Error: {e}")
 
     # add 60 minutes to timestamp
     current_timestamp_plus_60_minutes = Current_timestamp + timedelta(minutes=60)
@@ -150,20 +153,87 @@ def insertHourlyEnergyConsumption(DeviceId, Average, Current_timestamp):
         print(f"Failed to save Energy Consumption for {DeviceId}. Error: {e}")
 
 
+def insertDailyEnergyConsumption(DeviceId, Average, Current_timestamp):
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM average_consumption_daily WHERE device_id = %s", (DeviceId,))
+    rows = cursor.fetchall()
+    if rows:
+        rowDay = []
+        rowId = []
+        for row in rows:
+            (id, device_id, start_timestamp, end_timestamp, average_consumption) = row
+            rowDay.append(start_timestamp.strftime("%d"))
+            rowId.append(id)
+
+        currentDay = Current_timestamp.strftime("%d")
+        if currentDay in rowDay:
+            matching_id = [rowId[i] for i, day in enumerate(rowDay) if day == currentDay]
+
+            if matching_id:
+                cursor.execute("SELECT * FROM average_consumption_daily WHERE device_id = %s", (matching_id[0],))
+                rows = cursor.fetchone()
+                for row in rows:
+                    (id, device_id, start_timestamp, end_timestamp, average_consumption) = row
+
+                    # Save history
+                    query = "INSERT INTO average_consumption_daily_history(device_id, start_timestamp, end_timestamp, average_consumption) VALUES (%s, %s, %s, %s)"
+                    data = (device_id, start_timestamp, end_timestamp, average_consumption)
+                    cursor.execute(query, data)
+                    try:
+                        conn.commit()
+                        print("Saved Energy Consumption History for", device_id)
+                    except Exception as e:
+                        conn.rollback()  # Rollback the transaction if an error occurs
+                        print(f"Failed to save Energy Consumption for {device_id}. Error: {e}")
+
+                    cursor.execute("DELETE FROM average_consumption_daily WHERE id = %s", (device_id,))
+                    try:
+                        conn.commit()
+                        print("Deleted Energy Consumption for", device_id)
+                    except Exception as e:
+                        conn.rollback()  # Rollback the transaction if an error occurs
+                        print(f"Failed to Delete Energy Consumption for {device_id}. Error: {e}")
+
+    # add 60 minutes to timestamp
+    current_timestamp_plus_24_hours = Current_timestamp + timedelta(hours=24)
+    query = "INSERT INTO average_consumption_daily(device_id, start_timestamp, end_timestamp, average_consumption) VALUES (%s, %s, %s, %s)"
+    data = (DeviceId, Current_timestamp, current_timestamp_plus_24_hours, Average)
+    cursor.execute(query, data)
+    try:
+        conn.commit()
+        print("Saved Energy Consumption for", DeviceId)
+    except Exception as e:
+        conn.rollback()  # Rollback the transaction if an error occurs
+        print(f"Failed to save Energy Consumption for {DeviceId}. Error: {e}")
+
 def deleteAllRowsByIdTableMinutes(deviceId, conn):
     cursor = conn.cursor()
     cursor.execute("DELETE FROM energy_consumption WHERE device_id = %s", (deviceId,))
     conn.commit()
 
+
+def getAllEnergyConsumptionHourlyByDeviceId(Id, Conn):
+        cursor = Conn.cursor()
+        cursor.execute("SELECT * FROM energy_consumption_hourly WHERE device_id = %s", (Id,))
+        return cursor.fetchall()
+
+
+def getHourlyCountRowsByDeviceId(Id, Conn):
+    cursor = Conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM energy_consumption_hourly WHERE device_id = %s", (Id,))
+    result = cursor.fetchone()[0]
+    return int(result)
+
+
 # Main save function (there are execute other functions)
-def saveData(id,conn):
-    deviceInfo = getDeviceById(id,conn)
+def saveData(id, conn):
+    global HOURCOUNTER
+    deviceInfo = getDeviceById(id, conn)
     if deviceInfo:
         id, login, passowrd, ip, = deviceInfo
         energy = getData(login, passowrd, ip)
         current_timestamp = datetime.now()
-        countRows = getCountRowsByDeviceId(id,conn)
-
+        countRows = getCountRowsByDeviceId(id, conn)
         if countRows and countRows > 59:
             energyConsumptions = getAllEnergyConsumptionByDeviceId(id, conn)
 
@@ -172,14 +242,31 @@ def saveData(id,conn):
                 deviceid = 0
                 for energyConsumption in energyConsumptions:
                     id, device_id, timestamp, consumption = energyConsumption
-                    if(consumption):
+                    if (consumption):
                         consumptionAvg += consumption
                         deviceid = device_id
                 average = consumptionAvg / countRows
                 insertHourlyEnergyConsumption(deviceid, average, current_timestamp)
                 deleteAllRowsByIdTableMinutes(deviceid, conn)
+
+                HOURCOUNTER += 1
         else:
             insertEnergyConsumption(id, current_timestamp, energy)
+
+        if HOURCOUNTER > 23:
+            energyConsumptionsHourly = getAllEnergyConsumptionHourlyByDeviceId(id, conn)
+            countRows = getHourlyCountRowsByDeviceId(id, conn)
+            if energyConsumptionsHourly:
+                consumptionAvg = 0
+                deviceid = 0
+                for energyConsumption in energyConsumptionsHourly:
+                    id, device_id, start_timestamp, end_timestamp, consumption = energyConsumption
+                    if consumption:
+                        consumptionAvg += consumption
+                        deviceid = device_id
+                average = consumptionAvg / countRows
+                insertDailyEnergyConsumption(deviceid, average, current_timestamp)
+                HOURCOUNTER = 0
 
         print("Data inserted successfully!")
 
